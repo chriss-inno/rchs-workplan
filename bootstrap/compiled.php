@@ -423,7 +423,7 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class Application extends Container implements HttpKernelInterface, TerminableInterface, ResponsePreparerInterface
 {
-    const VERSION = '4.2.11';
+    const VERSION = '4.2.16';
     protected $booted = false;
     protected $bootingCallbacks = array();
     protected $bootedCallbacks = array();
@@ -695,7 +695,7 @@ class Application extends Container implements HttpKernelInterface, TerminableIn
             $this->boot();
             return $this->dispatch($request);
         } catch (\Exception $e) {
-            if ($this->runningUnitTests()) {
+            if (!$catch || $this->runningUnitTests()) {
                 throw $e;
             }
             return $this['exception']->handleException($e);
@@ -3329,8 +3329,9 @@ class Arr
         foreach (explode('.', $key) as $segment) {
             $results = array();
             foreach ($array as $value) {
-                $value = (array) $value;
-                $results[] = $value[$segment];
+                if (array_key_exists($segment, $value = (array) $value)) {
+                    $results[] = $value[$segment];
+                }
             }
             $array = array_values($results);
         }
@@ -3387,6 +3388,22 @@ class Arr
             $array = $array[$segment];
         }
         return $array;
+    }
+    public static function has($array, $key)
+    {
+        if (empty($array) || is_null($key)) {
+            return false;
+        }
+        if (array_key_exists($key, $array)) {
+            return true;
+        }
+        foreach (explode('.', $key) as $segment) {
+            if (!is_array($array) || !array_key_exists($segment, $array)) {
+                return false;
+            }
+            $array = $array[$segment];
+        }
+        return true;
     }
     public static function only($array, $keys)
     {
@@ -3450,13 +3467,19 @@ use Illuminate\Support\Traits\MacroableTrait;
 class Str
 {
     use MacroableTrait;
+    protected static $snakeCache = array();
+    protected static $camelCache = array();
+    protected static $studlyCache = array();
     public static function ascii($value)
     {
         return Utf8::toAscii($value);
     }
     public static function camel($value)
     {
-        return lcfirst(static::studly($value));
+        if (isset(static::$camelCache[$value])) {
+            return static::$camelCache[$value];
+        }
+        return static::$camelCache[$value] = lcfirst(static::studly($value));
     }
     public static function contains($haystack, $needles)
     {
@@ -3535,7 +3558,7 @@ class Str
     public static function quickRandom($length = 16)
     {
         $pool = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        return substr(str_shuffle(str_repeat($pool, 5)), 0, $length);
+        return substr(str_shuffle(str_repeat($pool, $length)), 0, $length);
     }
     public static function upper($value)
     {
@@ -3560,11 +3583,14 @@ class Str
     }
     public static function snake($value, $delimiter = '_')
     {
-        if (ctype_lower($value)) {
-            return $value;
+        if (isset(static::$snakeCache[$value . $delimiter])) {
+            return static::$snakeCache[$value . $delimiter];
         }
-        $replace = '$1' . $delimiter . '$2';
-        return strtolower(preg_replace('/(.)([A-Z])/', $replace, $value));
+        if (!ctype_lower($value)) {
+            $replace = '$1' . $delimiter . '$2';
+            $value = strtolower(preg_replace('/(.)([A-Z])/', $replace, $value));
+        }
+        return static::$snakeCache[$value . $delimiter] = $value;
     }
     public static function startsWith($haystack, $needles)
     {
@@ -3577,8 +3603,11 @@ class Str
     }
     public static function studly($value)
     {
+        if (isset(static::$studlyCache[$value])) {
+            return static::$studlyCache[$value];
+        }
         $value = ucwords(str_replace(array('-', '_'), ' ', $value));
-        return str_replace(' ', '', $value);
+        return static::$studlyCache[$value] = str_replace(' ', '', $value);
     }
 }
 namespace Symfony\Component\Debug;
@@ -4005,7 +4034,7 @@ class FileLoader implements LoaderInterface
         }
         $file = "{$path}/{$group}.php";
         if ($this->files->exists($file)) {
-            $items = $this->files->getRequire($file);
+            $items = $this->getRequire($file);
         }
         $file = "{$path}/{$environment}/{$group}.php";
         if ($this->files->exists($file)) {
@@ -4015,7 +4044,7 @@ class FileLoader implements LoaderInterface
     }
     protected function mergeEnvironment(array $items, $file)
     {
-        return array_replace_recursive($items, $this->files->getRequire($file));
+        return array_replace_recursive($items, $this->getRequire($file));
     }
     public function exists($group, $namespace = null)
     {
@@ -4198,6 +4227,10 @@ class Filesystem
     public function copy($path, $target)
     {
         return copy($path, $target);
+    }
+    public function name($path)
+    {
+        return pathinfo($path, PATHINFO_FILENAME);
     }
     public function extension($path)
     {
@@ -5530,8 +5563,10 @@ class Route
     }
     protected function addFilters($type, $filters)
     {
+        $filters = static::explodeFilters($filters);
         if (isset($this->action[$type])) {
-            $this->action[$type] .= '|' . $filters;
+            $existing = static::explodeFilters($this->action[$type]);
+            $this->action[$type] = array_merge($existing, $filters);
         } else {
             $this->action[$type] = $filters;
         }
@@ -6024,7 +6059,7 @@ class UrlGenerator
     }
     public function isValidUrl($path)
     {
-        if (starts_with($path, array('#', '//', 'mailto:', 'tel:'))) {
+        if (starts_with($path, array('#', '//', 'mailto:', 'tel:', 'http://', 'https://'))) {
             return true;
         }
         return filter_var($path, FILTER_VALIDATE_URL) !== false;
@@ -6480,6 +6515,11 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
         $instance->setConnection($connection);
         return $instance->newQuery();
     }
+    public static function onWriteConnection()
+    {
+        $instance = new static();
+        return $instance->newQuery()->useWritePdo();
+    }
     public static function all($columns = array('*'))
     {
         $instance = new static();
@@ -6542,7 +6582,7 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
     public function belongsTo($related, $foreignKey = null, $otherKey = null, $relation = null)
     {
         if (is_null($relation)) {
-            list(, $caller) = debug_backtrace(false);
+            list(, $caller) = debug_backtrace(false, 2);
             $relation = $caller['function'];
         }
         if (is_null($foreignKey)) {
@@ -6556,7 +6596,7 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
     public function morphTo($name = null, $type = null, $id = null)
     {
         if (is_null($name)) {
-            list(, $caller) = debug_backtrace(false);
+            list(, $caller) = debug_backtrace(false, 2);
             $name = snake_case($caller['function']);
         }
         list($type, $id) = $this->getMorphs($name, $type, $id);
@@ -6807,7 +6847,7 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
             $this->touchOwners();
         }
     }
-    protected function performUpdate(Builder $query, array $options)
+    protected function performUpdate(Builder $query, array $options = array())
     {
         $dirty = $this->getDirty();
         if (count($dirty) > 0) {
@@ -6825,7 +6865,7 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
         }
         return true;
     }
-    protected function performInsert(Builder $query, array $options)
+    protected function performInsert(Builder $query, array $options = array())
     {
         if ($this->fireModelEvent('creating') === false) {
             return false;
@@ -7046,6 +7086,10 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
         $this->fillable = $fillable;
         return $this;
     }
+    public function getGuarded()
+    {
+        return $this->guarded;
+    }
     public function guard(array $guarded)
     {
         $this->guarded = $guarded;
@@ -7169,6 +7213,7 @@ abstract class Model implements ArrayAccess, ArrayableInterface, JsonableInterfa
             if (isset($relation) || is_null($value)) {
                 $attributes[$key] = $relation;
             }
+            unset($relation);
         }
         return $attributes;
     }
@@ -8378,7 +8423,7 @@ class Encrypter
     protected $block = 16;
     public function __construct($key)
     {
-        $this->key = $key;
+        $this->key = (string) $key;
     }
     public function encrypt($value)
     {
@@ -8467,7 +8512,7 @@ class Encrypter
     }
     public function setKey($key)
     {
-        $this->key = $key;
+        $this->key = (string) $key;
     }
     public function setCipher($cipher)
     {
@@ -8513,7 +8558,7 @@ class LogServiceProvider extends ServiceProvider
     }
     public function provides()
     {
-        return array('log');
+        return array('log', 'Psr\\Log\\LoggerInterface');
     }
 }
 namespace Illuminate\Log;
@@ -8714,13 +8759,10 @@ class Logger implements LoggerInterface
         if (!$this->handlers) {
             $this->pushHandler(new StreamHandler('php://stderr', static::DEBUG));
         }
-        if (!static::$timezone) {
-            static::$timezone = new \DateTimeZone(date_default_timezone_get() ?: 'UTC');
-        }
-        $record = array('message' => (string) $message, 'context' => $context, 'level' => $level, 'level_name' => static::getLevelName($level), 'channel' => $this->name, 'datetime' => \DateTime::createFromFormat('U.u', sprintf('%.6F', microtime(true)), static::$timezone)->setTimezone(static::$timezone), 'extra' => array());
+        $levelName = static::getLevelName($level);
         $handlerKey = null;
         foreach ($this->handlers as $key => $handler) {
-            if ($handler->isHandling($record)) {
+            if ($handler->isHandling(array('level' => $level))) {
                 $handlerKey = $key;
                 break;
             }
@@ -8728,6 +8770,10 @@ class Logger implements LoggerInterface
         if (null === $handlerKey) {
             return false;
         }
+        if (!static::$timezone) {
+            static::$timezone = new \DateTimeZone(date_default_timezone_get() ?: 'UTC');
+        }
+        $record = array('message' => (string) $message, 'context' => $context, 'level' => $level, 'level_name' => $levelName, 'channel' => $this->name, 'datetime' => \DateTime::createFromFormat('U.u', sprintf('%.6F', microtime(true)), static::$timezone)->setTimezone(static::$timezone), 'extra' => array());
         foreach ($this->processors as $processor) {
             $record = call_user_func($processor, $record);
         }
