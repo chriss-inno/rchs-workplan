@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>Login Page - Ace Admin</title>
+    <title>Login Page - RCHS e-Workplan</title>
 
     <meta name="description" content="User login page" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -45,11 +45,10 @@
                     <div class="row-fluid">
                         <div class="center">
                             <h1>
-                                <i class="icon-leaf green"></i>
-                                <span class="red">Ace</span>
-                                <span class="white">Application</span>
+
+                                <span class="white">Reproductive and Child Health section</span>
                             </h1>
-                            <h4 class="blue">&copy; Company Name</h4>
+                            <h4 class="blue">e-Workplan</h4>
                         </div>
                     </div>
 
@@ -101,23 +100,7 @@
                                         </fieldset>
                                         </form>
 
-                                        <div class="social-or-login center">
-                                            <span class="bigger-110">Or Login Using</span>
-                                        </div>
 
-                                        <div class="social-login center">
-                                            <a class="btn btn-primary">
-                                                <i class="icon-facebook"></i>
-                                            </a>
-
-                                            <a class="btn btn-info">
-                                                <i class="icon-twitter"></i>
-                                            </a>
-
-                                            <a class="btn btn-danger">
-                                                <i class="icon-google-plus"></i>
-                                            </a>
-                                        </div>
                                     </div><!--/widget-main-->
 
                                     <div class="toolbar clearfix">
@@ -127,13 +110,14 @@
                                                 I forgot my password
                                             </a>
                                         </div>
-
+                                        <!--
                                         <div>
                                             <a href="#" onclick="show_box('signup-box'); return false;" class="user-signup-link">
                                                 I want to register
                                                 <i class="icon-arrow-right"></i>
                                             </a>
                                         </div>
+                                        -->
                                     </div>
                                 </div><!--/widget-body-->
                             </div><!--/login-box-->

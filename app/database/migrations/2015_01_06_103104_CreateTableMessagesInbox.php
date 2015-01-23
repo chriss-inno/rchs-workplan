@@ -13,6 +13,7 @@ class CreateTableMessages extends Migration {
 	public function up()
 	{
 		//
+
 	}
 
 	/**
